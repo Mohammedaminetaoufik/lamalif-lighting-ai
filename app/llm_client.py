@@ -9,11 +9,39 @@ from app.rag.schemas import RAGContext
 
 DEFAULT_OPENAI_MODEL = "gpt-4.1-mini"
 
-_SYSTEM_MSG = "Tu génères uniquement du SQL PostgreSQL sécurisé. Aucun markdown, aucune explication."
-
+_SYSTEM_MSG = (
+    "Tu es un expert SQL spécialisé dans les systèmes de télégestion d'éclairage public intelligent (smart city). "
+    "Tu connais parfaitement le schéma de la plateforme Lamalif : lampadaires connectés, LCUs (passerelles radio), "
+    "alertes terrain, bons de travail, télémétrie capteurs (température, puissance, tension, courant), mise en service. "
+    "Tu génères UNIQUEMENT du SQL PostgreSQL SELECT valide sur les vues autorisées. "
+    "Aucun markdown, aucune explication, SQL brut uniquement."
+)
 
 class LLMConfigurationError(Exception):
     pass
+
+
+# Clients singletons — évite de recréer la connexion TLS à chaque appel
+_groq_client: Groq | None = None
+_openai_client: OpenAI | None = None
+
+
+def _get_groq_client() -> Groq:
+    global _groq_client
+    if not settings.groq_api_key or settings.groq_api_key == "your_groq_api_key_here":
+        raise LLMConfigurationError("GROQ_API_KEY is not configured")
+    if _groq_client is None:
+        _groq_client = Groq(api_key=settings.groq_api_key)
+    return _groq_client
+
+
+def _get_openai_client() -> OpenAI:
+    global _openai_client
+    if not settings.openai_api_key or settings.openai_api_key == "your_openai_api_key_here":
+        raise LLMConfigurationError("OPENAI_API_KEY is not configured")
+    if _openai_client is None:
+        _openai_client = OpenAI(api_key=settings.openai_api_key)
+    return _openai_client
 
 
 def clean_sql_output(content: str) -> str:
@@ -23,65 +51,71 @@ def clean_sql_output(content: str) -> str:
     return sql
 
 
-def generate_sql_with_openai(question: str, rag: RAGContext | None = None) -> str:
-    if not settings.openai_api_key or settings.openai_api_key == "your_openai_api_key_here":
-        raise LLMConfigurationError("OPENAI_API_KEY is not configured")
-
+def generate_sql_with_openai(question: str, rag: RAGContext | None = None, history: list[dict] | None = None) -> str:
     from app.rag.context_builder import format_rag_for_sql_prompt
     rag_section = format_rag_for_sql_prompt(rag) if rag else ""
-    client = OpenAI(api_key=settings.openai_api_key)
+    client = _get_openai_client()
     prompt = build_sql_prompt(question, rag_context=rag_section)
+
+    messages: list[dict] = [{"role": "system", "content": _SYSTEM_MSG}]
+    if history:
+        # Inject last 4 messages (2 exchanges) as context — helps SQL generation on follow-up questions
+        messages.extend(history[-4:])
+    messages.append({"role": "user", "content": prompt})
 
     response = client.chat.completions.create(
         model=DEFAULT_OPENAI_MODEL,
-        messages=[
-            {"role": "system", "content": _SYSTEM_MSG},
-            {"role": "user", "content": prompt},
-        ],
+        messages=messages,
         temperature=0,
+        max_tokens=600,
     )
 
     content = response.choices[0].message.content or ""
     return clean_sql_output(content)
 
 
-def generate_sql_with_groq(question: str, rag: RAGContext | None = None) -> str:
-    if not settings.groq_api_key or settings.groq_api_key == "your_groq_api_key_here":
-        raise LLMConfigurationError("GROQ_API_KEY is not configured")
-
+def generate_sql_with_groq(question: str, rag: RAGContext | None = None, history: list[dict] | None = None) -> str:
     from app.rag.context_builder import format_rag_for_sql_prompt
     rag_section = format_rag_for_sql_prompt(rag) if rag else ""
-    client = Groq(api_key=settings.groq_api_key)
+    client = _get_groq_client()
     prompt = build_sql_prompt(question, rag_context=rag_section)
+
+    messages: list[dict] = [{"role": "system", "content": _SYSTEM_MSG}]
+    if history:
+        messages.extend(history[-4:])
+    messages.append({"role": "user", "content": prompt})
 
     response = client.chat.completions.create(
         model=settings.groq_model,
-        messages=[
-            {"role": "system", "content": _SYSTEM_MSG},
-            {"role": "user", "content": prompt},
-        ],
+        messages=messages,
         temperature=0,
+        max_tokens=600,
     )
 
     content = response.choices[0].message.content or ""
     return clean_sql_output(content)
 
 
-def generate_sql_with_llm(question: str, rag: RAGContext | None = None) -> str:
+def generate_sql_with_llm(question: str, rag: RAGContext | None = None, history: list[dict] | None = None) -> str:
     provider = settings.llm_provider.lower().strip()
 
     if provider == "groq":
-        return generate_sql_with_groq(question, rag=rag)
+        return generate_sql_with_groq(question, rag=rag, history=history)
 
     if provider == "openai":
-        return generate_sql_with_openai(question, rag=rag)
+        return generate_sql_with_openai(question, rag=rag, history=history)
 
     raise LLMConfigurationError(f"Unsupported LLM_PROVIDER: {settings.llm_provider}")
 
 
 _PROFESSIONAL_SYSTEM = (
-    "Tu es un expert en télégestion d'éclairage public. "
-    "Tu analyses des données PostgreSQL et produis une réponse en deux sections séparées par ---CHAT---."
+    "Tu es Lamalif IA, expert senior en télégestion d'éclairage public intelligent. "
+    "Tu maîtrises : les protocoles DALI/D4i/0-10V, les LCUs (passerelles radio LoRa/Zigbee), les drivers LED, "
+    "la maintenance prédictive, la gestion des alertes et des bons de travail terrain. "
+    "Tu analyses des données PostgreSQL réelles et tu produis des réponses structurées, précises et actionnables. "
+    "Tu distingues toujours : urgences terrain (offline, alertes critiques), optimisations (énergie, dimming), "
+    "et constats sans action immédiate. Tu réponds en français professionnel, avec des chiffres précis et des noms réels. "
+    "Tu génères une réponse en deux sections séparées par ---CHAT---."
 )
 
 _VALID_PRIORITIES = {"low", "medium", "high", "critical"}
@@ -95,11 +129,9 @@ def generate_professional_answer(
     columns: list[str],
     rows: list[dict],
     rag: RAGContext | None = None,
+    history: list[dict] | None = None,
 ) -> dict:
-    if not settings.groq_api_key or settings.groq_api_key == "your_groq_api_key_here":
-        raise LLMConfigurationError("GROQ_API_KEY is not configured")
-
-    client = Groq(api_key=settings.groq_api_key)
+    client = _get_groq_client()
 
     # Cap context size — never send more than 50 rows to the LLM
     from app.rag.context_builder import format_rag_for_answer_prompt
@@ -139,16 +171,26 @@ SECTION 1 — JSON compact sur UNE SEULE LIGNE (pas de retours à la ligne dans 
 
 ---CHAT---
 
-SECTION 2 — Réponse conversationnelle en Markdown (200 mots max) :
-Réponds directement à la question de façon naturelle. Utilise **gras** pour les valeurs clés, des listes - pour énumérer. Intègre les vrais chiffres et noms des résultats. Pas de titre h1. Sous-sections ### autorisées si nécessaire."""
+SECTION 2 — Réponse conversationnelle en Markdown (500 mots max) :
+Réponds directement à la question comme un expert qui connaît ce réseau. Structure ta réponse ainsi :
+- **Constat principal** : la valeur clé ou le chiffre le plus important en gras dès la première phrase
+- Utilise ### pour les sous-sections si plusieurs angles sont nécessaires
+- Listes `- ` pour énumérer équipements, zones ou actions
+- Tableau Markdown si les données comportent 3+ colonnes utiles (uniquement les colonnes pertinentes)
+- **Conclusion actionnable** : ce que l'administrateur doit faire maintenant, en une phrase claire
+Intègre les vrais noms (zones, références LCU, codes lampadaires) depuis les résultats. Pas de h1. Pas de phrase générique d'intro type "Voici les résultats"."""
+
+    messages: list[dict] = [{"role": "system", "content": _PROFESSIONAL_SYSTEM}]
+    if history:
+        # Thread last 6 messages (3 exchanges) so the LLM knows the conversation context
+        messages.extend(history[-6:])
+    messages.append({"role": "user", "content": prompt})
 
     response = client.chat.completions.create(
         model=settings.groq_model,
-        messages=[
-            {"role": "system", "content": _PROFESSIONAL_SYSTEM},
-            {"role": "user", "content": prompt},
-        ],
-        temperature=0.2,
+        messages=messages,
+        temperature=0.3,
+        max_tokens=2000,
     )
 
     content = (response.choices[0].message.content or "").strip()
@@ -184,10 +226,7 @@ Réponds directement à la question de façon naturelle. Utilise **gras** pour l
 
 
 def generate_page_insight(page: str, data: dict, rag: RAGContext | None = None) -> dict:
-    if not settings.groq_api_key or settings.groq_api_key == "your_groq_api_key_here":
-        raise LLMConfigurationError("GROQ_API_KEY is not configured")
-
-    client = Groq(api_key=settings.groq_api_key)
+    client = _get_groq_client()
 
     from app.rag.context_builder import format_rag_for_insight_prompt
     rag_section = format_rag_for_insight_prompt(rag) if rag else ""
@@ -230,7 +269,8 @@ Retourne UNIQUEMENT un JSON valide sur UNE SEULE LIGNE (pas de retour à la lign
             },
             {"role": "user", "content": prompt},
         ],
-        temperature=0.2,
+        temperature=0.3,
+        max_tokens=800,
     )
 
     content = (response.choices[0].message.content or "").strip()
@@ -266,10 +306,7 @@ Retourne UNIQUEMENT un JSON valide sur UNE SEULE LIGNE (pas de retour à la lign
 
 
 def generate_entity_insight(entity_type: str, entity_id: int, data: dict, rag: RAGContext | None = None) -> dict:
-    if not settings.groq_api_key or settings.groq_api_key == "your_groq_api_key_here":
-        raise LLMConfigurationError("GROQ_API_KEY is not configured")
-
-    client = Groq(api_key=settings.groq_api_key)
+    client = _get_groq_client()
 
     from app.rag.context_builder import format_rag_for_insight_prompt
     rag_section = format_rag_for_insight_prompt(rag) if rag else ""
@@ -311,11 +348,17 @@ Retourne UNIQUEMENT un JSON valide sur UNE SEULE LIGNE :
         messages=[
             {
                 "role": "system",
-                "content": "Tu analyses des équipements d'éclairage public intelligent. Retourne uniquement du JSON valide sur une seule ligne.",
+                "content": (
+                    "Tu es Lamalif IA, expert en diagnostic d'équipements d'éclairage public intelligent. "
+                    "Tu analyses les données techniques d'un lampadaire ou d'une LCU (passerelle radio) "
+                    "et produis un diagnostic précis, technique et actionnable pour l'administrateur. "
+                    "Retourne uniquement du JSON valide sur une seule ligne."
+                ),
             },
             {"role": "user", "content": prompt},
         ],
-        temperature=0.2,
+        temperature=0.3,
+        max_tokens=800,
     )
 
     content = (response.choices[0].message.content or "").strip()
@@ -344,5 +387,80 @@ Retourne UNIQUEMENT un JSON valide sur UNE SEULE LIGNE :
     if not isinstance(parsed.get("suggested_actions"), list):
         sa = parsed.get("suggested_actions", "")
         parsed["suggested_actions"] = [sa] if sa else ["Vérifiez régulièrement l'état de l'équipement."]
+
+    return parsed
+
+
+def generate_daily_digest(kpis: dict, rag: RAGContext | None = None) -> dict:
+    client = _get_groq_client()
+
+    from app.rag.context_builder import format_rag_for_insight_prompt
+    rag_section = format_rag_for_insight_prompt(rag) if rag else ""
+    data_str = json.dumps(kpis, ensure_ascii=False, default=str)
+
+    prompt = f"""Tu es un assistant IA d'aide à la décision pour une plateforme de télégestion d'éclairage public intelligent.
+
+Ta mission est de produire une "Synthèse Quotidienne" (Daily Digest) basée sur les KPIs des dernières 24 heures.
+
+Données du réseau (24h) :
+{data_str}
+
+Contraintes strictes :
+- Ne jamais inventer de chiffres ou informations absentes des données.
+- Utiliser uniquement les données fournies.
+- summary : 1-2 phrases de synthèse globale très claires.
+- analysis : 3-5 phrases d'analyse métier (santé du réseau, points d'attention).
+- recommendations : liste de 2 à 4 actions prioritaires pour la journée.
+- priority : low | medium | high | critical
+- confidence : float 0.0-1.0
+
+{rag_section}
+Retourne UNIQUEMENT un JSON valide sur UNE SEULE LIGNE (pas de retour à la ligne) :
+{{"summary":"...","analysis":"...","recommendations":["...","..."],"priority":"medium","confidence":0.9}}"""
+
+    response = client.chat.completions.create(
+        model=settings.groq_model,
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "Tu es Lamalif IA, expert en exploitation de réseaux d'éclairage public intelligent. "
+                    "Tu produis chaque jour une synthèse claire et actionnelle de l'état du réseau "
+                    "sur les dernières 24 heures, en te basant exclusivement sur les KPIs fournis. "
+                    "Retourne uniquement du JSON valide sur une seule ligne."
+                ),
+            },
+            {"role": "user", "content": prompt},
+        ],
+        temperature=0.3,
+        max_tokens=800,
+    )
+
+    content = (response.choices[0].message.content or "").strip()
+
+    if content.startswith("```"):
+        lines = content.splitlines()
+        lines = [ln for ln in lines if not ln.startswith("```")]
+        content = "\n".join(lines).strip()
+
+    start = content.find("{")
+    end = content.rfind("}") + 1
+    if start >= 0 and end > start:
+        content = content[start:end]
+
+    parsed = json.loads(content)
+
+    if parsed.get("priority") not in _VALID_PRIORITIES:
+        parsed["priority"] = "medium"
+
+    try:
+        parsed["confidence"] = float(parsed.get("confidence", 0.9))
+        parsed["confidence"] = max(0.0, min(1.0, parsed["confidence"]))
+    except (TypeError, ValueError):
+        parsed["confidence"] = 0.9
+
+    if not isinstance(parsed.get("recommendations"), list):
+        recs = parsed.get("recommendations", "")
+        parsed["recommendations"] = [recs] if recs else ["Surveillez les alertes critiques aujourd'hui."]
 
     return parsed

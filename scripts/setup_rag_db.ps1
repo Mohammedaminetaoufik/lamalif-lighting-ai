@@ -4,11 +4,12 @@
 # Ou avec paramètres : .\scripts\setup_rag_db.ps1 -User postgres -DB lampadaire
 # ============================================================
 
+# NOTE : $Host est une variable automatique réservée de PowerShell — on utilise $DbHost
 param(
-    [string]$User = "postgres",
-    [string]$DB   = "lampadaire",
-    [string]$Host = "localhost",
-    [string]$Port = "5432"
+    [string]$User   = "postgres",
+    [string]$DB     = "lampadaire",
+    [string]$DbHost = "localhost",
+    [string]$Port   = "5432"
 )
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -16,7 +17,7 @@ $SqlFile   = Join-Path $ScriptDir "..\sql\04_rag_tables.sql"
 
 Write-Host ""
 Write-Host "=== Setup RAG Tables ===" -ForegroundColor Cyan
-Write-Host "Host : $Host`:$Port"
+Write-Host "Host : $DbHost`:$Port"
 Write-Host "DB   : $DB"
 Write-Host "User : $User"
 Write-Host "File : $SqlFile"
@@ -29,7 +30,7 @@ if (-not (Test-Path $SqlFile)) {
 
 # Appliquer le fichier SQL principal (version JSONB stable)
 Write-Host "Applying 04_rag_tables.sql ..." -ForegroundColor Yellow
-psql -h $Host -p $Port -U $User -d $DB -f $SqlFile
+psql -h $DbHost -p $Port -U $User -d $DB -f $SqlFile
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host "ERREUR lors de l'execution du script SQL." -ForegroundColor Red
@@ -41,7 +42,7 @@ Write-Host "Verification des tables..." -ForegroundColor Yellow
 
 # Vérifier que les deux tables existent
 $checkSQL = "SELECT table_name FROM information_schema.tables WHERE table_name IN ('rag_documents','rag_chunks') ORDER BY table_name;"
-psql -h $Host -p $Port -U $User -d $DB -c $checkSQL
+psql -h $DbHost -p $Port -U $User -d $DB -c $checkSQL
 
 Write-Host ""
 Write-Host "=== Setup termine ===" -ForegroundColor Green

@@ -2,10 +2,16 @@ from pydantic import BaseModel
 from typing import Any
 
 
+class ConversationMessage(BaseModel):
+    role: str  # "user" | "assistant"
+    content: str
+
+
 class AIQueryRequest(BaseModel):
     question: str
     language: str = "fr"
     max_rows: int = 100
+    conversation_history: list[ConversationMessage] | None = None
 
 
 class ChartSpec(BaseModel):

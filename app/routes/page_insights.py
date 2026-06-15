@@ -171,10 +171,25 @@ def get_page_insights(
             detail=f"Page '{page}' non supportée. Pages disponibles : {', '.join(SUPPORTED_PAGES)}",
         )
 
-    # Return cache if still fresh
-    if not refresh and _cache_valid(page):
-        cached = _CACHE[page]["payload"]
-        return PageInsightResponse(**cached, cached=True)
+    # Serve the last generated result; NEVER call the LLM unless explicitly refreshed.
+    # This means a page load/refresh costs zero tokens — only the manual refresh button
+    # (refresh=true) regenerates the analysis.
+    if not refresh:
+        entry = _CACHE.get(page)
+        if entry:
+            return PageInsightResponse(**entry["payload"], cached=True)
+        # Not generated yet — return an empty placeholder, no token usage
+        return PageInsightResponse(
+            page=page,
+            summary="",
+            analysis="",
+            recommendations=[],
+            priority="medium",
+            kpis={},
+            confidence=0.0,
+            generated_at="",
+            cached=False,
+        )
 
     # Collect data from PostgreSQL (predefined queries only — no LLM SQL generation)
     data = _collect_page_data(page)

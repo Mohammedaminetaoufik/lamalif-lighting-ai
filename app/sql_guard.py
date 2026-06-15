@@ -70,8 +70,17 @@ def validate_sql(sql: str) -> str:
                 f"Vues autorisées : {', '.join(allowed)}"
             )
 
-    # Add LIMIT if not present
-    if parsed.find(exp.Limit) is None:
+    # Add LIMIT if not present; clamp existing LIMIT to max_rows
+    limit_node = parsed.find(exp.Limit)
+    if limit_node is None:
         parsed = parsed.limit(settings.default_limit)
+    else:
+        try:
+            current_limit = int(limit_node.expression.this)
+            if current_limit > settings.max_rows:
+                parsed = parsed.limit(settings.max_rows)
+        except (TypeError, ValueError, AttributeError):
+            # Non-literal LIMIT (e.g. expression) — replace with safe default
+            parsed = parsed.limit(settings.default_limit)
 
     return parsed.sql(dialect="postgres")

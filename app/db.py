@@ -24,11 +24,13 @@ def _serialize_value(v):
     return v
 
 # Read-only engine — SELECT on ai_* views only
+# statement_timeout kills any query exceeding SQL_TIMEOUT_SECONDS (LLM-generated SQL safety net)
 engine: Engine = create_engine(
     settings.database_url,
     pool_pre_ping=True,
     pool_size=5,
     max_overflow=10,
+    connect_args={"options": f"-c statement_timeout={settings.sql_timeout_seconds * 1000}"},
 )
 
 # Write engine — INSERT/SELECT on ai_query_logs only
@@ -102,16 +104,24 @@ def log_ai_query(
         })
 
 
-def get_ai_query_history(limit: int = 20) -> dict:
-    sql = text("""
+def get_ai_query_history(limit: int = 20, search: str | None = None) -> dict:
+    where_clause = ""
+    params = {"limit": limit}
+    
+    if search:
+        where_clause = "WHERE question ILIKE :search"
+        params["search"] = f"%{search}%"
+        
+    sql = text(f"""
         SELECT id, user_id, question, generated_sql, status,
                row_count, error_message, duration_ms, created_at
         FROM ai_query_logs
+        {where_clause}
         ORDER BY created_at DESC
         LIMIT :limit
     """)
     with log_engine.connect() as conn:
-        result = conn.execute(sql, {"limit": limit})
+        result = conn.execute(sql, params)
         rows = result.fetchall()
         columns = list(result.keys())
     return {

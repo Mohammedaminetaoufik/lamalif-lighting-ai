@@ -21,14 +21,27 @@ class Settings(BaseSettings):
     sql_timeout_seconds: int = Field(5, alias="SQL_TIMEOUT_SECONDS")
 
     allowed_views: str = Field(
-        "ai_lampadaire_status,ai_lcu_status,ai_open_alerts,ai_workorders,ai_telemetry_latest",
+        (
+            "ai_lampadaire_status,ai_lcu_status,ai_open_alerts,ai_workorders,ai_telemetry_latest,"
+            "ai_commissioning_status,ai_zone_health,ai_energy_summary,ai_lampadaire_diagnostics,"
+            "ai_lcu_health,ai_workorder_age,ai_alert_summary,ai_dimming_status,ai_driver_health,"
+            "ai_controller_network_status,ai_map_assets,ai_recent_activity,ai_maintenance_overview,"
+            "ai_global_kpis,ai_technician_workload"
+        ),
         alias="ALLOWED_VIEWS",
+    )
+
+    # CORS — par défaut uniquement le backend Go et le dev server Vite.
+    # En production, remplacer par les origines réelles via CORS_ORIGINS.
+    cors_origins: str = Field(
+        "http://localhost:8080,http://localhost:5173",
+        alias="CORS_ORIGINS",
     )
 
     # ── RAG Configuration ──────────────────────────────────────
     rag_enabled: bool = Field(True, alias="RAG_ENABLED")
     rag_backend: str = Field("pgvector", alias="RAG_BACKEND")
-    rag_top_k: int = Field(5, alias="RAG_TOP_K")
+    rag_top_k: int = Field(8, alias="RAG_TOP_K")
     rag_max_context_chars: int = Field(6000, alias="RAG_MAX_CONTEXT_CHARS")
     rag_chunk_size: int = Field(1000, alias="RAG_CHUNK_SIZE")
     rag_chunk_overlap: int = Field(150, alias="RAG_CHUNK_OVERLAP")
@@ -41,6 +54,10 @@ class Settings(BaseSettings):
     @property
     def allowed_views_list(self) -> list[str]:
         return [view.strip() for view in self.allowed_views.split(",") if view.strip()]
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 
     @property
     def effective_log_database_url(self) -> str:

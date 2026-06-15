@@ -12,7 +12,8 @@ from app.rag import build_rag_context
 router = APIRouter(prefix="/ai", tags=["Entity Insights"])
 
 _CACHE: dict[str, dict] = {}
-_CACHE_TTL = 300  # 5 minutes
+_CACHE_TTL = 300       # 5 minutes for successful responses
+_CACHE_TTL_429 = 120   # 2 minutes when Groq rate-limited (avoid hammering)
 
 SUPPORTED_TYPES = ("lampadaire", "lcu")
 
@@ -246,7 +247,10 @@ def _cache_key(entity_type: str, entity_id: int) -> str:
 
 def _cache_valid(key: str) -> bool:
     entry = _CACHE.get(key)
-    return bool(entry and (time.monotonic() - entry["_ts"]) < _CACHE_TTL)
+    if not entry:
+        return False
+    ttl = _CACHE_TTL_429 if entry.get("_rate_limited") else _CACHE_TTL
+    return (time.monotonic() - entry["_ts"]) < ttl
 
 
 # ── Endpoint ─────────────────────────────────────────────────────────────────
@@ -267,8 +271,36 @@ def get_entity_insights(
         )
 
     key = _cache_key(entity_type, entity_id)
-    if not refresh and _cache_valid(key):
-        return EntityInsightResponse(**_CACHE[key]["payload"], cached=True)
+
+    # Serve last generated result; never call the LLM unless explicitly refreshed.
+    if not refresh:
+        entry = _CACHE.get(key)
+        if entry:
+            return EntityInsightResponse(**entry["payload"], cached=True)
+
+        # Not generated yet — return technical details from the DB (cheap, no tokens),
+        # with empty AI text. The user generates the analysis via the refresh button.
+        if entity_type == "lampadaire":
+            data = get_lampadaire_insight_data(entity_id)
+        else:
+            data = get_lcu_insight_data(entity_id)
+        if not data.get("details"):
+            raise HTTPException(status_code=404, detail=f"{entity_type} with id={entity_id} not found")
+        priority = (_rule_priority_lampadaire(data) if entity_type == "lampadaire" else _rule_priority_lcu(data))
+        return EntityInsightResponse(
+            entity_type=entity_type,
+            entity_id=entity_id,
+            technical_details=_build_technical_details(entity_type, data),
+            related_data=_build_related_data(entity_type, data),
+            summary="",
+            analysis="",
+            recommendation="",
+            priority=priority,
+            suggested_actions=[],
+            confidence=0.0,
+            generated_at="",
+            cached=False,
+        )
 
     # Collect data from PostgreSQL (predefined parameterized queries)
     if entity_type == "lampadaire":
@@ -289,12 +321,13 @@ def get_entity_insights(
     rag = build_rag_context(rag_query, extra_context=entity_type)
 
     # Generate AI text
+    rate_limited = False
     try:
         insight = generate_entity_insight(entity_type, entity_id, data, rag=rag)
     except Exception as exc:
         err = str(exc)
         if "429" in err or "rate_limit" in err.lower():
-            raise HTTPException(status_code=429, detail="Limite de tokens IA atteinte. Réessayez dans quelques minutes.")
+            rate_limited = True
         insight = _fallback_insight(entity_type, data, priority)
 
     generated_at = datetime.now(tz=timezone.utc).isoformat()
@@ -313,5 +346,5 @@ def get_entity_insights(
         "generated_at":     generated_at,
     }
 
-    _CACHE[key] = {"payload": payload, "_ts": time.monotonic()}
+    _CACHE[key] = {"payload": payload, "_ts": time.monotonic(), "_rate_limited": rate_limited}
     return EntityInsightResponse(**payload, cached=False)
