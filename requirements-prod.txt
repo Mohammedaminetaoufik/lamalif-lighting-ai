@@ -1,0 +1,32 @@
+# Lamalif IA — dépendances de production (propre & minimal).
+# Utiliser ce fichier pour un déploiement ou un venv propre :
+#   python -m venv venv && venv/Scripts/pip install -r requirements-prod.txt
+# Le requirements.txt historique est un freeze global (legacy) — ne pas l'utiliser en prod.
+
+# API
+fastapi
+uvicorn[standard]
+pydantic-settings
+python-dotenv
+
+# Base de données (lecture seule sur vues ai_*)
+sqlalchemy
+psycopg[binary]
+
+# Sécurité SQL (SQLGuard)
+sqlglot
+
+# LLM (optionnel — le moteur de règles fonctionne sans)
+groq
+openai
+httpx
+
+# RAG / embeddings
+sentence-transformers
+numpy
+scikit-learn
+pgvector
+
+# Données / export
+pandas
+openpyxl

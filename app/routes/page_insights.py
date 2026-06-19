@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from app.db import execute_select
 from app.llm_client import generate_page_insight
 from app.rag import build_rag_context
+from app.recommendations import evaluate_page, global_priority, serialize
 
 router = APIRouter(prefix="/ai", tags=["Page Insights"])
 
@@ -28,6 +29,18 @@ class PageInsightResponse(BaseModel):
     confidence: float
     generated_at: str
     cached: bool
+    # ── Industrial decision engine (rule-based, always available, 0 token) ──
+    rule_recommendations: list[dict[str, Any]] = []
+    source: str = "rule_based"
+    llm_available: bool = False
+
+
+def _page_kpis(page: str, data: dict[str, Any]) -> dict[str, Any]:
+    if page == "dashboard":
+        rows = data.get("global_kpis", [])
+        if isinstance(rows, list) and rows:
+            return rows[0]
+    return {}
 
 
 # ── Predefined read-only queries per page ────────────────────────────────────
@@ -111,7 +124,8 @@ _PAGE_QUERIES: dict[str, list[tuple[str, str]]] = {
     "energy": [
         (
             "energy_by_zone",
-            "SELECT zone, lampadaires_count, total_energy_kwh, avg_energy_kwh, total_operating_hours "
+            "SELECT zone, lampadaires_count, total_energy_kwh, avg_energy_kwh, total_operating_hours, "
+            "avg_intensity, total_nominal_power_w, avg_measured_power_w "
             "FROM ai_energy_summary ORDER BY total_energy_kwh DESC LIMIT 10",
         ),
     ],
@@ -178,17 +192,22 @@ def get_page_insights(
         entry = _CACHE.get(page)
         if entry:
             return PageInsightResponse(**entry["payload"], cached=True)
-        # Not generated yet — return an empty placeholder, no token usage
+        # No LLM cache yet — return rule-based recommendations + KPIs (0 token).
+        data = _collect_page_data(page)
+        recs = evaluate_page(page, data)
         return PageInsightResponse(
             page=page,
             summary="",
             analysis="",
             recommendations=[],
-            priority="medium",
-            kpis={},
+            priority=global_priority(recs),
+            kpis=_page_kpis(page, data),
             confidence=0.0,
             generated_at="",
             cached=False,
+            rule_recommendations=serialize(recs),
+            source="rule_based",
+            llm_available=False,
         )
 
     # Collect data from PostgreSQL (predefined queries only — no LLM SQL generation)
@@ -229,22 +248,22 @@ def get_page_insights(
 
     generated_at = datetime.now(tz=timezone.utc).isoformat()
 
-    # Extract global KPIs for dashboard page
-    kpis: dict[str, Any] = {}
-    if page == "dashboard":
-        rows = data.get("global_kpis", [])
-        if isinstance(rows, list) and rows:
-            kpis = rows[0]
+    # Rule-based recommendations always computed (0 token), in parallel with LLM narrative.
+    recs = evaluate_page(page, data)
+    llm_available = not rate_limited and float(insight.get("confidence", 0.7)) > 0
 
     payload: dict[str, Any] = {
         "page": page,
         "summary": insight.get("summary", ""),
         "analysis": insight.get("analysis", ""),
         "recommendations": insight.get("recommendations", []),
-        "priority": insight.get("priority", "medium"),
-        "kpis": kpis,
+        "priority": insight.get("priority", global_priority(recs)),
+        "kpis": _page_kpis(page, data),
         "confidence": float(insight.get("confidence", 0.7)),
         "generated_at": generated_at,
+        "rule_recommendations": serialize(recs),
+        "source": "llm_enriched" if llm_available else "fallback",
+        "llm_available": llm_available,
     }
 
     _CACHE[page] = {"payload": payload, "_ts": time.monotonic(), "_rate_limited": rate_limited}

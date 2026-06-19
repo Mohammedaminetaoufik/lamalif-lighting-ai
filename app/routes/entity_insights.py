@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from app.db import execute_select_params
 from app.llm_client import generate_entity_insight
 from app.rag import build_rag_context
+from app.recommendations import evaluate_lampadaire, evaluate_lcu, serialize
 
 router = APIRouter(prefix="/ai", tags=["Entity Insights"])
 
@@ -31,6 +32,26 @@ class EntityInsightResponse(BaseModel):
     confidence: float
     generated_at: str
     cached: bool
+    # ── Industrial decision engine (rule-based, always available, 0 token) ──
+    risk_score: int | None = None
+    maintainability_score: int | None = None
+    communication_health_score: int | None = None
+    recommendations: list[dict[str, Any]] = []
+    source: str = "rule_based"
+    llm_available: bool = False
+
+
+def _run_engine(entity_type: str, data: dict) -> dict:
+    """Rule-based scores + recommendations for an entity (no LLM, no token cost)."""
+    result = evaluate_lampadaire(data) if entity_type == "lampadaire" else evaluate_lcu(data)
+    scores = result["scores"]
+    return {
+        "risk_score": scores.get("risk_score"),
+        "maintainability_score": scores.get("maintainability_score"),
+        "communication_health_score": scores.get("communication_health_score"),
+        "recommendations": serialize(result["recommendations"]),
+        "engine_priority": result["priority"],
+    }
 
 
 # ── Data collection ──────────────────────────────────────────────────────────
@@ -286,7 +307,9 @@ def get_entity_insights(
             data = get_lcu_insight_data(entity_id)
         if not data.get("details"):
             raise HTTPException(status_code=404, detail=f"{entity_type} with id={entity_id} not found")
-        priority = (_rule_priority_lampadaire(data) if entity_type == "lampadaire" else _rule_priority_lcu(data))
+
+        # Rule-based engine: scores + structured recommendations, 0 token.
+        engine = _run_engine(entity_type, data)
         return EntityInsightResponse(
             entity_type=entity_type,
             entity_id=entity_id,
@@ -295,11 +318,17 @@ def get_entity_insights(
             summary="",
             analysis="",
             recommendation="",
-            priority=priority,
+            priority=engine["engine_priority"],
             suggested_actions=[],
             confidence=0.0,
             generated_at="",
             cached=False,
+            risk_score=engine["risk_score"],
+            maintainability_score=engine["maintainability_score"],
+            communication_health_score=engine["communication_health_score"],
+            recommendations=engine["recommendations"],
+            source="rule_based",
+            llm_available=False,
         )
 
     # Collect data from PostgreSQL (predefined parameterized queries)
@@ -332,6 +361,11 @@ def get_entity_insights(
 
     generated_at = datetime.now(tz=timezone.utc).isoformat()
 
+    # Rule-based engine always runs (scores + structured recommendations).
+    engine = _run_engine(entity_type, data)
+    # LLM only enriches the narrative on top; never overrides the rule-based priority upward-only.
+    llm_available = not rate_limited and float(insight.get("confidence", 0.7)) > 0
+
     payload: dict[str, Any] = {
         "entity_type":      entity_type,
         "entity_id":        entity_id,
@@ -340,10 +374,16 @@ def get_entity_insights(
         "summary":          insight.get("summary", ""),
         "analysis":         insight.get("analysis", ""),
         "recommendation":   insight.get("recommendation", ""),
-        "priority":         insight.get("priority", priority),
+        "priority":         insight.get("priority", engine["engine_priority"]),
         "suggested_actions": insight.get("suggested_actions", []),
         "confidence":       float(insight.get("confidence", 0.7)),
         "generated_at":     generated_at,
+        "risk_score":       engine["risk_score"],
+        "maintainability_score": engine["maintainability_score"],
+        "communication_health_score": engine["communication_health_score"],
+        "recommendations":  engine["recommendations"],
+        "source":           "llm_enriched" if llm_available else "fallback",
+        "llm_available":    llm_available,
     }
 
     _CACHE[key] = {"payload": payload, "_ts": time.monotonic(), "_rate_limited": rate_limited}
