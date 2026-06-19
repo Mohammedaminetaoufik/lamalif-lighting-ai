@@ -10,6 +10,8 @@ from app.routes.entity_insights import router as entity_insights_router
 from app.routes.rag import router as rag_router
 from app.routes.suggestions import router as suggestions_router
 from app.routes.daily_digest import router as daily_digest_router
+from app.routes.decision_center import router as decision_center_router
+from app.routes.mobile_ai import router as mobile_ai_router
 
 app = FastAPI(title="Smart Lighting AI Service")
 
@@ -40,3 +42,5 @@ app.include_router(entity_insights_router)
 app.include_router(rag_router)
 app.include_router(suggestions_router)
 app.include_router(daily_digest_router)
+app.include_router(decision_center_router)
+app.include_router(mobile_ai_router)
