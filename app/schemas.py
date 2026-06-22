@@ -29,7 +29,7 @@ class RAGInfo(BaseModel):
 
 class AIQueryResponse(BaseModel):
     question: str
-    sql: str
+    sql: str | None = None
     columns: list[str]
     rows: list[dict[str, Any]]
     summary: str

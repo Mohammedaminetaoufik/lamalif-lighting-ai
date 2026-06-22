@@ -116,6 +116,20 @@ FROM ai_lampadaire_status
 WHERE etat = 'offline' AND zone ILIKE '%rabat%'
 LIMIT 100
 
+Question : Pourquoi la zone Rabat contient autant de lampadaires offline ?
+SQL :
+SELECT zone, total_lampadaires, offline_count, online_count, critical_alerts_count, open_workorders_count
+FROM ai_zone_health
+WHERE zone ILIKE '%rabat%'
+LIMIT 5
+
+Question : Combien de lampadaires sont offline dans la zone Marrakech ?
+SQL :
+SELECT zone, total_lampadaires, offline_count, online_count
+FROM ai_zone_health
+WHERE zone ILIKE '%marrakech%'
+LIMIT 5
+
 Question : Quelle LCU a le plus de lampadaires hors ligne ?
 SQL :
 SELECT reference, zone, offline_count, lampadaires_count
@@ -301,6 +315,8 @@ RÈGLES ABSOLUES — tu dois les respecter sans exception :
 - Pour les questions de score de santé LCU, utilise ai_lcu_health (colonne health_score).
 - Pour les questions sur les bons de travail anciens, utilise ai_workorder_age (colonne age_hours).
 - Pour les questions sur les controllers/signal, utilise ai_controller_network_status.
+- Pour les questions sur le nombre de lampadaires offline/online PAR ZONE (ex: "combien de lampadaires offline dans Rabat ?"), utilise ai_zone_health et filtre par zone — NE FAIS JAMAIS un COUNT(*) manuel sur ai_lampadaire_status.
+- Règle GROUP BY OBLIGATOIRE : si tu SELECT une colonne non agrégée avec COUNT(*) ou autre agrégat, tu DOIS inclure cette colonne dans GROUP BY. Exemple valide : SELECT zone, COUNT(*) FROM ai_open_alerts GROUP BY zone. Exemple INTERDIT : SELECT zone, COUNT(*) FROM ai_open_alerts (sans GROUP BY).
 
 {_SCHEMA}
 

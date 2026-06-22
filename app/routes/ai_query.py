@@ -1,11 +1,12 @@
 import json
+import re
 import time
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from app.schemas import AIQueryRequest, AIQueryResponse, ChartSpec, RAGInfo
 from app.llm_client import (
     generate_sql_with_llm, generate_professional_answer,
-    generate_sql_with_groq, LLMConfigurationError,
+    generate_doc_answer, generate_sql_with_groq, LLMConfigurationError,
     _PROFESSIONAL_SYSTEM, _get_groq_client,
 )
 from app.config import settings
@@ -20,6 +21,31 @@ from app.recommendation_engine import (
 from app.prompt_builder import build_sql_prompt
 
 router = APIRouter(prefix="/ai", tags=["AI Query"])
+
+# ── Documentation-query detection ────────────────────────────────────────────
+# Matches questions that ask HOW something is calculated / WHY it's an estimate,
+# as opposed to questions that request a live value from the database.
+_DOC_PATTERNS = re.compile(
+    r"""
+    (?:comment\s+.{0,80}?\s+(?:est[-\s]calculé|est[-\s]calculée|sont[-\s]calculés|sont[-\s]calculées
+                               |calcule|calculer|fonctionne|fonctionnent))
+    |(?:pourquoi\s+.{0,80}?\s+(?:estimation|estimé|estimée|estimées|estimés|une\s+estimation))
+    |(?:quelle\s+est\s+la\s+formule)
+    |(?:qu[''']est[-\s]ce\s+qu)
+    |(?:quelle\s+est\s+la\s+diff[eé]rence)
+    |(?:comment\s+(?:le|la|les|un|une)\s+(?:score|co[uû]t|[eé]conomie|dimming|co2|co₂|risque
+                                           |cause\s+probable|priorit[eé]|maintenabilit[eé]))
+    |(?:\bformule\b)
+    |(?:comment\s+fonctionne)
+    |(?:expliqu(?:er?|ez?)\s+.{0,50}?\s+(?:calcul|formule|score|seuil))
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
+
+
+def _is_documentation_query(question: str) -> bool:
+    """Return True when the question is about methodology/formulas, not live data."""
+    return bool(_DOC_PATTERNS.search(question))
 
 
 def safe_log(
@@ -47,7 +73,6 @@ def safe_log(
 @router.post("/query", response_model=AIQueryResponse)
 def ai_query(body: AIQueryRequest):
     start = time.time()
-    raw_sql: str | None = None
 
     # Step 0 — Build RAG context (non-blocking, never raises)
     rag = build_rag_context(body.question)
@@ -56,6 +81,46 @@ def ai_query(body: AIQueryRequest):
     history: list[dict] | None = None
     if body.conversation_history:
         history = [{"role": m.role, "content": m.content} for m in body.conversation_history]
+
+    # ── Documentation shortcut ────────────────────────────────────────────────
+    # Questions about HOW things are calculated (formulas, methodology) should be
+    # answered from RAG documentation only — no SQL, no live data.
+    if _is_documentation_query(body.question):
+        try:
+            doc = generate_doc_answer(body.question, rag=rag, history=history)
+        except LLMConfigurationError as exc:
+            duration_ms = int((time.time() - start) * 1000)
+            safe_log(body.question, None, "failed", error_message=str(exc), duration_ms=duration_ms)
+            raise HTTPException(status_code=500, detail=str(exc))
+        except Exception as exc:
+            duration_ms = int((time.time() - start) * 1000)
+            err_str = str(exc)
+            safe_log(body.question, None, "failed", error_message=err_str, duration_ms=duration_ms)
+            if "429" in err_str or "rate_limit" in err_str.lower():
+                raise HTTPException(status_code=429, detail="Limite de tokens IA atteinte. Réessayez dans quelques minutes.")
+            raise HTTPException(status_code=500, detail=f"Erreur IA : {err_str}")
+
+        duration_ms = int((time.time() - start) * 1000)
+        safe_log(body.question, None, "success", row_count=0, duration_ms=duration_ms)
+        chart_data = infer_chart_type([], [])
+        return AIQueryResponse(
+            question=body.question,
+            sql=None,
+            columns=[],
+            rows=[],
+            summary=doc.get("summary", ""),
+            analysis=doc.get("analysis", ""),
+            recommendation=doc.get("recommendation", ""),
+            priority=doc.get("priority", "low"),
+            chat_response=doc.get("chat_response"),
+            chart=ChartSpec(**chart_data),
+            confidence=doc.get("confidence", 0.85),
+            execution_time_ms=duration_ms,
+            rag=RAGInfo(enabled=rag.enabled, used=rag.used, chunks_count=rag.chunks_count, sources=rag.sources),
+        )
+    # ─────────────────────────────────────────────────────────────────────────
+
+    raw_sql: str | None = None
 
     # Step 1 — Generate SQL with LLM (RAG context + conversation history injected)
     try:
@@ -172,6 +237,120 @@ def ai_query_stream(body: AIQueryRequest):
     if body.conversation_history:
         history = [{"role": m.role, "content": m.content} for m in body.conversation_history]
 
+    from app.rag.context_builder import format_rag_for_answer_prompt
+
+    # ── Documentation shortcut (streaming) ───────────────────────────────────
+    # For formula/methodology questions, skip SQL entirely and answer from RAG.
+    if _is_documentation_query(body.question):
+        chart_data = infer_chart_type([], [])
+        rag_section = format_rag_for_answer_prompt(rag) if rag else ""
+        duration_ms = int((time.time() - start) * 1000)
+
+        doc_prompt = f"""Tu es un expert senior en télégestion d'éclairage public intelligent (plateforme Lamalif).
+
+L'administrateur pose une question sur la MÉTHODOLOGIE, une FORMULE ou un CALCUL du système :
+{body.question}
+
+INSTRUCTION CRITIQUE :
+- Cette question demande COMMENT le système fonctionne — PAS des données temps réel.
+- Ne génère PAS de SQL. Il n'y a pas de résultats SQL ici.
+- Réponds UNIQUEMENT à partir du contexte de documentation RAG ci-dessous.
+- Si la formule est dans le contexte RAG, cite-la EXACTEMENT en bloc de code.
+- Ne recalcule PAS de valeurs depuis des données fictives.
+- Ne mentionne PAS de "résultats SQL" ni de "données disponibles".
+
+{rag_section}
+Retourne ta réponse en DEUX sections séparées EXACTEMENT par la ligne ---CHAT--- :
+
+SECTION 1 — JSON compact sur UNE SEULE LIGNE :
+{{"summary": "Résumé en 1-2 phrases.", "analysis": "Explication de la formule/méthodologie en 3-5 phrases.", "recommendation": "Ce que l'administrateur doit retenir.", "priority": "low", "confidence": 0.85}}
+
+---CHAT---
+
+SECTION 2 — Réponse structurée en Markdown (utilise ### pour chaque section) :
+
+### Formule utilisée
+[La formule exacte en bloc de code, copiée du contexte RAG]
+
+### Explication des variables
+[Explique chaque variable de la formule]
+
+### Interprétation métier
+[Ce que cette formule signifie pour l'opérateur du réseau]
+
+### Limites / hypothèses
+[Quelles hypothèses sont faites, pourquoi c'est une estimation si c'est le cas]
+
+### Action recommandée
+[Ce que l'administrateur doit savoir ou faire]
+
+Règles absolues : ne jamais présenter un score heuristique comme une probabilité statistique.
+Si un tarif ou un facteur (CO₂, kWh) est configurable, le préciser explicitement."""
+
+        doc_messages: list[dict] = [{"role": "system", "content": _PROFESSIONAL_SYSTEM}]
+        if history:
+            doc_messages.extend(history[-6:])
+        doc_messages.append({"role": "user", "content": doc_prompt})
+
+        def doc_event_stream():
+            client = _get_groq_client()
+            json_buf = ""
+            chat_started = False
+            _SEPARATOR = "---CHAT---"
+            try:
+                stream = client.chat.completions.create(
+                    model=settings.groq_model,
+                    messages=doc_messages,
+                    temperature=0.3,
+                    max_tokens=2000,
+                    stream=True,
+                )
+                for chunk in stream:
+                    token = chunk.choices[0].delta.content or ""
+                    if not token:
+                        continue
+                    if not chat_started:
+                        json_buf += token
+                        if _SEPARATOR in json_buf:
+                            parts = json_buf.split(_SEPARATOR, 1)
+                            json_raw = parts[0].strip()
+                            remainder = parts[1].strip()
+                            try:
+                                parsed = json.loads(json_raw)
+                            except Exception:
+                                s = json_raw.find("{"); e = json_raw.rfind("}") + 1
+                                parsed = json.loads(json_raw[s:e]) if s >= 0 and e > s else {}
+                            meta = {
+                                "type": "meta",
+                                "sql": None,
+                                "columns": [],
+                                "rows": [],
+                                "summary": parsed.get("summary", ""),
+                                "analysis": parsed.get("analysis", ""),
+                                "recommendation": parsed.get("recommendation", ""),
+                                "priority": parsed.get("priority", "low"),
+                                "confidence": float(parsed.get("confidence", 0.85)),
+                                "chart": chart_data,
+                                "execution_time_ms": duration_ms,
+                            }
+                            yield f"data: {json.dumps(meta, ensure_ascii=False)}\n\n"
+                            chat_started = True
+                            if remainder:
+                                yield f"data: {remainder}\n\n"
+                    else:
+                        yield f"data: {token}\n\n"
+            except Exception as exc:
+                err = {"type": "error", "message": str(exc)}
+                yield f"data: {json.dumps(err)}\n\n"
+            yield "data: [DONE]\n\n"
+            safe_log(body.question, None, "success", row_count=0, duration_ms=duration_ms)
+
+        return StreamingResponse(doc_event_stream(), media_type="text/event-stream", headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        })
+    # ─────────────────────────────────────────────────────────────────────────
+
     # Step 1 — SQL generation
     try:
         raw_sql = generate_sql_with_llm(body.question, rag=rag, history=history)
@@ -200,7 +379,6 @@ def ai_query_stream(body: AIQueryRequest):
     chart_data = infer_chart_type(columns, rows)
 
     # Build answer prompt (reuse logic from generate_professional_answer)
-    from app.rag.context_builder import format_rag_for_answer_prompt
     rag_section = format_rag_for_answer_prompt(rag) if rag else ""
     rows_sample = rows[:50]
     rows_str = json.dumps(rows_sample, ensure_ascii=False)
