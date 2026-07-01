@@ -11,6 +11,39 @@ audience: admin,technicien,ingenieur
 
 # Score réseau — Decision Center IA
 
+## Résumé — Comment est calculé le score réseau
+
+Le score réseau est un indicateur de 0 à 100 calculé de manière **100 % déterministe** par Python (`decision_center.py`). Aucun LLM n'intervient dans ce calcul.
+
+**Formule complète :**
+```
+Score = 100
+Score -= (lampadaires_hors_ligne / total_lampadaires) × 60    [max −60]
+Score -= min(20, alertes_critiques × 3)                        [max −20]
+Score -= (LCUs_hors_ligne / total_LCUs) × 20                  [max −20]
+Score = max(0, Score)
+```
+
+**Classification du score :**
+
+| Score | État | Action |
+|---|---|---|
+| ≥ 71 | **normal** | Réseau fonctionnel |
+| 41–70 | **warning** | Surveillance renforcée |
+| ≤ 40 | **critical** | Intervention urgente |
+
+**Formule de confiance :**
+```
+Confiance = 0.72 + (couverture × 0.23)
+couverture = (nb_zones_saines × 8 + nb_LCUs_saines × 4) / total_lampadaires
+```
+Confiance ≥ 0.90 = très fiable ; < 0.75 = données insuffisantes.
+
+**Exemple :** 30/120 hors ligne, 8 alertes critiques, 2/10 LCUs hors ligne →
+`100 − 15 − 20 − 4 = **61** → warning`
+
+---
+
 ## Objectif métier
 
 Le score réseau est un indicateur synthétique de la santé globale du réseau de lampadaires. Il est calculé sur une échelle de 0 à 100, où 100 représente un réseau parfaitement fonctionnel et 0 représente un réseau en défaillance totale.

@@ -29,6 +29,25 @@ def ingest_documents(body: IngestRequest, background_tasks: BackgroundTasks):
         raise HTTPException(status_code=500, detail=f"Ingestion failed: {e}")
 
 
+@router.get("/search")
+def rag_search(q: str, limit: int = 10):
+    """Debug: show which RAG chunks are retrieved for a query."""
+    from app.rag.retriever import search_rag
+    chunks = search_rag(q, limit=limit)
+    return {
+        "query": q,
+        "chunks_found": len(chunks),
+        "chunks": [
+            {
+                "title": c.get("title"),
+                "score": round(c.get("score", 0), 4),
+                "preview": (c.get("content") or "")[:200],
+            }
+            for c in chunks
+        ],
+    }
+
+
 @router.get("/status")
 def rag_status():
     """Return RAG configuration and availability status."""

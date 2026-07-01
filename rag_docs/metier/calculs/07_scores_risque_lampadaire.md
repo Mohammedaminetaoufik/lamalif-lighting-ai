@@ -11,6 +11,38 @@ audience: admin,technicien,ingenieur
 
 # Score de risque lampadaire
 
+## Résumé — Comment est calculé le score de risque d'un lampadaire
+
+Le score de risque quantifie l'urgence d'intervention sur un lampadaire. Calculé par Python (`scoring.py`), déterministe et rule-based. Le score est **cumulatif** et plafonné à 100.
+
+**Les 8 critères de risque :**
+
+| Critère | Points | Signification |
+|---|---|---|
+| État hors ligne | **+30** | Panne complète |
+| Alerte critique ouverte | **+25** | Risque immédiat équipement |
+| Température driver ≥ **80 °C** | **+25** | Risque thermique élevé |
+| LCU associée hors ligne | **+20** | Supervision impossible |
+| Bon de travail ouvert > **48h** | **+15** | Incident non résolu |
+| Température driver **70–79 °C** | **+15** | Surveillance renforcée |
+| Dernière télémétrie > **6h** | **+10** | Communication dégradée |
+| Non mis en service | **+10** | Statut opérationnel incertain |
+
+**score = min(100, somme des critères actifs)**
+
+**Mapping score → priorité :**
+
+| Score | Priorité | Délai d'intervention |
+|---|---|---|
+| ≥ 75 | **CRITICAL** | Immédiat |
+| 50–74 | **HIGH** | Dans les 24h |
+| 25–49 | **MEDIUM** | Dans les 48–72h |
+| < 25 | **LOW** | Surveillance normale |
+
+**Exemple :** offline (+30) + alerte critique (+25) + LCU hors ligne (+20) + télémétrie > 6h (+10) = **85 → CRITICAL**
+
+---
+
 ## Objectif métier
 
 Le score de risque lampadaire quantifie le degré d'urgence d'intervention sur un lampadaire donné. Plus le score est élevé, plus le lampadaire présente des signes de dysfonctionnement cumulés qui nécessitent une intervention rapide.

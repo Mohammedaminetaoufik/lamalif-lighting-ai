@@ -11,6 +11,31 @@ audience: admin,technicien,ingenieur
 
 # Indices de causes probables
 
+## Résumé — Comment sont calculés les indices de causes probables
+
+Les 4 indices sont des **scores heuristiques déterministes** (pas des probabilités statistiques ML). Ils orientent le diagnostic sans le remplacer. Un indice de 0.85 = "forte suspicion", pas "85 % de chance".
+
+**Les 4 formules :**
+
+| Cause | Formule | Min | Max |
+|---|---|---|---|
+| **Communication LCU/Gateway** | `min(0.95, 0.40 + offline_ratio × 0.50 + lcu_offline_count × 0.08)` | 0.40 | 0.95 |
+| **Alimentation réseau** | `min(0.90, 0.40 + offline_ratio × 0.30 + alertes_critiques × 0.04)` | 0.40 | 0.90 |
+| **Gateway/Backhaul** | `min(0.85, 0.40 + lcu_offline_count × 0.10)` | 0.40 | 0.85 |
+| **Driver LED individuel** | `0.25` (constante) | 0.25 | 0.25 |
+
+**Variables :**
+- `offline_ratio` : taux de lampadaires hors ligne (0.0 à 1.0)
+- `lcu_offline_count` : nombre de LCUs hors ligne
+- `alertes_critiques` : nombre d'alertes critiques ouvertes
+
+**Exemple :** offline_ratio = 0.60, lcu_offline_count = 3 →
+Indice LCU = min(0.95, 0.40 + 0.30 + 0.24) = **0.94** → forte suspicion problème communication.
+
+**Règle de lecture :** La cause avec l'indice le plus élevé est à investiguer en priorité. Si plusieurs indices sont proches, la situation est complexe.
+
+---
+
 ## Objectif métier
 
 Quand plusieurs lampadaires tombent en panne simultanément, les causes peuvent être multiples : problème de communication LCU/gateway, panne d'alimentation électrique, défaillance réseau backhaul, ou problèmes individuels de driver. Les indices de causes probables aident l'opérateur et le technicien à orienter leur diagnostic vers la cause la plus vraisemblable, avant même d'envoyer une équipe sur le terrain.

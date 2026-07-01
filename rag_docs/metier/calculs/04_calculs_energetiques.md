@@ -11,6 +11,38 @@ audience: admin,technicien,ingenieur
 
 # Calculs énergétiques
 
+## Résumé — Comment sont calculées l'énergie, les économies et les coûts
+
+Tous les calculs énergétiques sont effectués par le code Go (`dashboard.go`, `stats.go`). Le LLM explique les formules — il ne recalcule pas les valeurs.
+
+**Les 11 formules clés :**
+
+| Calcul | Formule | Unité |
+|---|---|---|
+| Énergie par mesure (5 min) | `P (W) × 5 / 60 / 1000` | kWh |
+| Énergie par heure | `P (W) × (1/12) / 1000` | kWh/h |
+| Énergie journalière | `Σ(energie)` toutes mesures du jour | kWh |
+| Puissance nominale totale | `Σ(P_nominale)` tous lampadaires actifs | W |
+| Puissance actuelle estimée | `Σ(P_nominale × intensité / 100)` | W |
+| Économie en watts | `P_nominale_totale − P_actuelle` | W |
+| Économie en % | `(Économie_W / P_nominale_totale) × 100` | % |
+| Intensité moyenne | `AVG(intensite)` tous lampadaires actifs | % |
+| **Coût estimé** | `kWh × 1.20 DH/kWh` | DH |
+| Gain dimming | `kWh_économisé × tarif` | DH |
+| **CO₂ évité** | `kWh_économisé × 0.638 kg CO₂/kWh` | kg CO₂ |
+
+**Tarifs de référence (configurables) :** 1.20 DH/kWh (Maroc), 0.638 kg CO₂/kWh (ONEE indicatif).
+
+**Formules recommandations :**
+- Absence profil dimming : `total_W × 0.45 × 5h / 1000` kWh économisé estimé
+- Intensité fixe élevée : `high_W × 0.30 × 8h / 1000` kWh économisé estimé
+
+**Exemple :** 59.2 kWh × 1.20 = **71 DH** estimé. 32 kWh/nuit × 0.638 × 365 = **7.4 tonnes CO₂/an**.
+
+**Hypothèse clé :** relation linéaire `P = P_nominal × intensité/100` (approximation — non parfaite pour tous drivers).
+
+---
+
 ## Objectif métier
 
 Les calculs énergétiques permettent à l'opérateur de mesurer la consommation électrique du parc de lampadaires, d'estimer les économies réalisées grâce au dimming intelligent, de calculer le coût en dirhams (DH) et d'évaluer l'impact environnemental en CO₂ évité.

@@ -11,6 +11,29 @@ audience: admin,technicien,ingenieur
 
 # Limites et hypothèses des calculs
 
+## Résumé — Les 10 limites et hypothèses importantes des calculs
+
+Ce document liste les limites à citer lorsque le LLM présente un résultat calculé. **Ne jamais présenter une estimation comme une mesure précise.**
+
+| Limite | Impact | Ce qui est affecté |
+|---|---|---|
+| **Données simulées** | Élevé | Tout — les valeurs ne sont pas réelles en mode démo |
+| **Dimming non linéaire** | Modéré | Calculs économies (`P = P_nom × intensité/100` est une approximation) |
+| **Tarif kWh fixe 1.20 DH** | Modéré | Coûts DH — à configurer selon contrat réel |
+| **Facteur CO₂ fixe 0.638 kg/kWh** | Faible | CO₂ évité — à mettre à jour depuis ONEE |
+| **Seuils non calibrés terrain** | Modéré | Tous seuils (75 °C, 30 lux, etc.) sont des références industrielles génériques |
+| **Scores heuristiques** | Faible-Modéré | Causes probables et scores risque — pas de ML, pas de probabilités statistiques |
+| **Facteur de puissance absent** | Faible | Puissance active réelle ≠ puissance apparente si cos φ < 1 |
+| **Hypothèses économies profils** | Faible | 45 % réduction × 5h nuit creuse (hardcodé) |
+| **Intervalle fixe 5 minutes** | Faible | Formules énergie incorrectes si intervalle différent |
+| **Cache 5 min score réseau** | Très faible | Score peut être décalé de 5 min |
+
+**Formulations correctes :**
+- ✅ "Le coût **estimé** est de 71 DH, calculé avec un tarif de 1.20 DH/kWh."
+- ❌ "Le coût exact est 71 DH."
+
+---
+
 ## Objectif de ce document
 
 Ce document recense de manière honnête et exhaustive les limites, hypothèses et conditions d'utilisation de tous les calculs de la plateforme Lamalif Télégestion. Cette transparence est essentielle pour que l'opérateur interprète correctement les résultats affichés et ne prenne pas de décisions basées sur des valeurs incorrectement assimilées à des mesures précises.

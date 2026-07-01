@@ -11,6 +11,41 @@ audience: admin,technicien,ingenieur
 
 # Exemples d'explication IA — Calculs et formules
 
+## Résumé — Format de réponse obligatoire pour les calculs
+
+Quand le LLM répond à une question sur un calcul, il **doit** suivre ce format structuré :
+
+```
+### Résultat
+[Valeur calculée en gras]
+
+### Formule utilisée
+[Formule ou règle en bloc de code]
+
+### Calcul ou explication
+[Détail du calcul ou des règles appliquées]
+
+### Interprétation métier
+[Ce que le résultat signifie pour l'opérateur]
+
+### Limites / hypothèses
+[Ce qui peut rendre ce résultat imprécis ou estimatif]
+
+### Action recommandée (si applicable)
+[Ce que l'opérateur doit faire]
+```
+
+**7 exemples modèles dans ce document :**
+1. Coût énergétique de 71 DH → `59.2 kWh × 1.20 DH/kWh`
+2. Priorité LCU KECH-001 → score 75 CRITICAL (offline +40, alertes +20, >30% hors ligne +15)
+3. Alerte température critique LP-044 → 78 °C > seuil 75 °C, résolution < 65 °C
+4. Pourquoi les économies sont des estimations → linéarité, tarif fixe, données simulées
+5. Score réseau 61/100 → `100 − 15 − 20 − 4 = 61 → warning`
+6. Indice cause probable LCU/Gateway 0.85 → formule heuristique, forte suspicion
+7. CO₂ évité 7.4 tonnes/an → `11 680 kWh × 0.638 kg/kWh`
+
+---
+
 Ce document fournit des paires question/réponse modèles illustrant comment le LLM doit expliquer les calculs de la plateforme. Chaque réponse suit le format structuré attendu : résultat → formule → interprétation → limites.
 
 ---

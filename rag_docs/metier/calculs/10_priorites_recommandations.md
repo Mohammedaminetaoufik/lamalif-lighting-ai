@@ -11,6 +11,38 @@ audience: admin,technicien,ingenieur
 
 # Priorités des recommandations IA
 
+## Résumé — Comment les priorités des recommandations sont calculées
+
+Les priorités sont déterminées **automatiquement** par un mapping score → priorité. Ce mapping s'applique aux scores de risque lampadaire, LCU, zone et efficacité énergétique.
+
+**Mapping score → priorité (universel) :**
+```
+score ≥ 75  →  CRITICAL  (intervention immédiate, < 4h)
+score 50–74 →  HIGH      (intervention dans les 24h)
+score 25–49 →  MEDIUM    (intervention dans les 48–72h)
+score < 25  →  LOW       (aucune urgence, prochaine visite)
+```
+
+**Score d'efficacité énergétique :**
+```
+Score = 100
+−25  si intensite_moyenne ≥ 90 % (dimming non utilisé)
+−20  si puissance mesurée > puissance nominale moy × 0.90 (surconsommation)
+```
+Score 75 → CRITICAL (dimming non configuré) ; score 80 → MEDIUM (légère surconsommation).
+
+**Pipeline de génération des recommandations :**
+1. Collecter données vues SQL `ai_*`
+2. Évaluer chaque entité (lampadaire, LCU, zone, driver, énergie, maintenance)
+3. Calculer le score de risque
+4. Mapper score → priorité
+5. Trier par priorité décroissante
+6. Dédoublonner (même entité, même type)
+
+**Règle absolue :** Le moteur ne déclenche **jamais** d'action automatique. Toute recommandation nécessite une validation humaine avant exécution.
+
+---
+
 ## Objectif métier
 
 Le moteur de recommandations produit des suggestions d'intervention pour l'opérateur et le technicien. Chaque recommandation est associée à une priorité (low / medium / high / critical) qui indique l'urgence de l'action. Cette priorité est calculée automatiquement à partir des scores de risque et ne dépend pas d'un jugement subjectif du LLM.

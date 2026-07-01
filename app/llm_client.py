@@ -453,6 +453,9 @@ INSTRUCTION CRITIQUE :
 - Ne cherche PAS dans la base de données. Il n'y a pas de résultats SQL ici.
 - Réponds UNIQUEMENT à partir du contexte de documentation RAG ci-dessous.
 - Si la formule est dans le contexte RAG, cite-la EXACTEMENT en bloc de code.
+- Si le contexte contient un tableau de règles ou de seuils, reproduis-le INTÉGRALEMENT en markdown — ne le résume pas, ne l'abrège pas.
+- Cite TOUS les seuils numériques exacts (ex : 75 °C, 30 lux, 70 lux, 0h–5h) tels qu'ils apparaissent dans le contexte.
+- Si le contexte liste N règles numérotées, explique chacune d'elles avec sa condition, son résultat et sa raison.
 - Si le contexte ne contient pas la réponse, dis-le honnêtement sans inventer.
 - Ne recalcule PAS de valeurs depuis des données fictives.
 - Ne mentionne PAS de "résultats SQL" ni de "données disponibles".
@@ -468,7 +471,7 @@ SECTION 1 — JSON compact sur UNE SEULE LIGNE :
 SECTION 2 — Réponse structurée en Markdown (utilise ### pour chaque section) :
 
 ### Formule utilisée
-[La formule exacte en bloc de code, copiée du contexte RAG]
+[Si une formule ou un tableau de règles est présent dans le contexte RAG, reproduis-le INTÉGRALEMENT ici en markdown. Sinon, explique le mécanisme exact (ex: moteur séquentiel à N règles).]
 
 ### Explication des variables
 [Explique chaque variable de la formule]
@@ -493,8 +496,8 @@ Si un tarif ou un facteur (CO₂, kWh) est configurable, le préciser explicitem
     response = client.chat.completions.create(
         model=settings.groq_model,
         messages=messages,
-        temperature=0.3,
-        max_tokens=2000,
+        temperature=0.1,
+        max_tokens=2500,
     )
 
     content = (response.choices[0].message.content or "").strip()

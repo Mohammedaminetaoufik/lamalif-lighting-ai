@@ -11,6 +11,35 @@ audience: admin,technicien,ingenieur
 
 # Calculateur intelligent de dimming
 
+## Résumé — Comment fonctionne le dimming automatique
+
+Le dimming automatique fonctionne via un **moteur de décision séquentiel à 7 règles**. La première règle dont la condition est vraie est appliquée ; les suivantes sont ignorées. Il n'y a pas d'équation unique — c'est une logique conditionnelle ordonnée par priorité.
+
+**Les 7 règles du calculateur de dimming :**
+
+| Priorité | Condition | Intensité recommandée | Confiance |
+|---|---|---|---|
+| 1 | État = maintenance | **0 %** | 1.00 |
+| 2 | Température driver > 75 °C | **min(intensité actuelle, 50 %)** | 0.95 |
+| 3 | Présence détectée ET luminosité < 30 lux | **90 %** | 0.90 |
+| 4 | Pas de présence ET heure entre 0h et 5h | **30 %** | 0.85 |
+| 5 | Pas de présence ET luminosité < 30 lux | **50 %** | 0.80 |
+| 6 | Luminosité ambiante > 70 lux (jour) | **20 %** | 0.85 |
+| 7 | Aucune règle ne correspond (défaut) | **60 %** | 0.70 |
+
+**Formule de la règle 2 (protection thermique) :**
+```
+intensite_cible = min(intensite_courante, 50)
+```
+
+**Variables d'entrée :** état du lampadaire, température driver (°C), présence (booléen), luminosité ambiante (lux), heure système (0–23).
+
+**Seuils clés :** 75 °C (protection thermique), 30 lux (seuil obscurité), 70 lux (seuil jour), 0h–5h (nuit creuse).
+
+**Règle absolue :** la recommandation n'est jamais appliquée automatiquement — une validation humaine est obligatoire avant envoi à la LCU.
+
+---
+
 ## Objectif métier
 
 Le calculateur de dimming détermine automatiquement le niveau d'intensité lumineuse optimal pour chaque lampadaire en fonction de son environnement et de son état. Son objectif est de réduire la consommation électrique sans compromettre la sécurité des usagers, tout en protégeant l'équipement contre les conditions dangereuses.

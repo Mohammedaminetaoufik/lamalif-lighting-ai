@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     openai_api_key: str | None = Field(None, alias="OPENAI_API_KEY")
 
     groq_api_key: str | None = Field(None, alias="GROQ_API_KEY")
-    groq_model: str = Field("llama-3.3-70b-versatile", alias="GROQ_MODEL")
+    groq_model: str = Field("openai/gpt-oss-120b", alias="GROQ_MODEL")
 
     max_rows: int = Field(500, alias="MAX_ROWS")
     default_limit: int = Field(100, alias="DEFAULT_LIMIT")

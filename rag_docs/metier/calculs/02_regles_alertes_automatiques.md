@@ -11,6 +11,30 @@ audience: admin,technicien,ingenieur
 
 # Règles d'alertes automatiques
 
+## Résumé — Comment fonctionnent les alertes automatiques
+
+Le moteur d'alertes surveille en continu la télémétrie et déclenche des alertes dès qu'un seuil est dépassé. Il utilise le principe d'**hystérésis** : le seuil de résolution est différent (plus bas) du seuil de déclenchement pour éviter les oscillations.
+
+**Les 4 alertes du système :**
+
+| Alerte | Seuil déclenchement | Seuil résolution | Sévérité |
+|---|---|---|---|
+| Température élevée | température > **75 °C** | température < **65 °C** | **CRITICAL** |
+| Humidité élevée | humidité > **85 %** | humidité < **75 %** | WARNING |
+| Consommation anormale | puissance > nominal × **1.30** | puissance < nominal × **1.20** | WARNING |
+| Consommation critique | puissance > nominal × **1.50** | — | **CRITICAL** |
+
+**Hystérésis :** écart de 10 °C / 10 % entre déclenchement et résolution — l'alerte reste active tant que le seuil de résolution n'est pas atteint.
+
+**Lien avec le dimming :** Quand l'alerte température CRITICAL est active, le calculateur applique automatiquement la règle 2 (intensité ≤ 50 %) pour réduire la chaleur.
+
+**Exemple escalade consommation (lampadaire 100 W) :**
+- 135 W → WARNING (> 130)
+- 160 W → CRITICAL (> 150, escalade)
+- 115 W → RÉSOLU (< 120)
+
+---
+
 ## Objectif métier
 
 Le moteur d'alertes surveille en continu les mesures de télémétrie remontées par les lampadaires et déclenche automatiquement des alertes lorsqu'une valeur dépasse un seuil critique. Ces alertes permettent à l'opérateur d'intervenir avant qu'une panne grave survienne.

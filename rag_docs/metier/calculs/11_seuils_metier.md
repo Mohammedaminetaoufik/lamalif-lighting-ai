@@ -11,6 +11,52 @@ audience: admin,technicien,ingenieur
 
 # Seuils métier globaux
 
+## Résumé — Catalogue complet de tous les seuils métier
+
+Ce document est la référence unique de tous les seuils numériques utilisés dans la plateforme.
+
+**Seuils thermiques (température driver) :**
+```
+< 65 °C   → Normal, pas d'action
+65–69 °C  → Zone de surveillance (entre résolution et déclenchement alerte)
+70–74 °C  → Score risque +15 pts (DRIVER_TEMP_HIGH = 70 °C)
+≥ 75 °C   → Alerte CRITICAL déclenchée + dimming limité à max 50 %
+75–79 °C  → Seuil alerte et protection dimming
+≥ 80 °C   → Score risque +25 pts (DRIVER_TEMP_CRITICAL = 80 °C)
+< 65 °C   → Résolution alerte température
+```
+
+**Seuils consommation (alertes) :**
+```
+P > P_nom × 1.30  → Alerte WARNING déclenchée
+P < P_nom × 1.20  → Alerte WARNING résolue
+P > P_nom × 1.50  → Alerte CRITICAL (escalade)
+```
+
+**Seuils dimming (calculateur) :**
+```
+Température > 75 °C              → intensité ≤ 50 %
+Luminosité < 30 lux + présence   → intensité 90 %
+Heure ∈ [0h, 5h[ + pas présence  → intensité 30 %
+Luminosité < 30 lux + pas présence → intensité 50 %
+Luminosité > 70 lux (jour)       → intensité 20 %
+Défaut                           → intensité 60 %
+```
+
+**Seuils temporels :**
+- Télémétrie périmée : **6h** (`TELEMETRY_STALE_HOURS`)
+- Bon de travail urgent : **24h** (`WO_CRITICAL_HOURS`)
+- Bon de travail ancien : **48h** (`WO_OLD_HOURS`)
+- Communication dégradée : **6h** ; sévèrement compromise : **24h**
+
+**Seuils signal radio :** < 30 dBm = faible (−25 pts) ; 30–59 dBm = modéré (−10 pts) ; ≥ 60 dBm = excellent.
+
+**Seuils zone hors ligne :** > 0 % (+20) ; ≥ 40 % (+40) ; ≥ 80 % (+60).
+
+**Tarifs économiques :** 1.20 DH/kWh — 0.638 kg CO₂/kWh (ONEE Maroc, indicatifs, configurables).
+
+---
+
 ## Objectif métier
 
 Les seuils métier sont les valeurs de référence utilisées dans tous les calculs de la plateforme pour décider si une situation est normale, dégradée ou critique. Ce document en est le catalogue complet. Ces seuils doivent devenir configurables dans une version entreprise pour s'adapter aux spécificités de chaque client, zone ou type d'équipement.

@@ -11,6 +11,46 @@ audience: admin,technicien,ingenieur
 
 # Scores de risque LCU et zone
 
+## Résumé — Comment sont calculés les scores de risque LCU et zone
+
+Deux scores agrégés pour détecter les problèmes **groupés** avant d'intervenir sur les lampadaires individuels. Calculés par `scoring.py`, plafonnés à 100.
+
+**Score de risque LCU :**
+```
+Score = 0
++40  si LCU hors ligne (status == "offline")
++30  si health_score < 30
++20  si alertes critiques présentes sur les lampadaires de cette LCU
++15  si health_score ∈ [30, 60[
++15  si (lampadaires_hors_ligne / total_lampadaires_LCU) > 30 %
+Score = min(100, score)
+```
+
+**Score de risque zone :**
+```
+Score = 0
++60  si (lampadaires_hors_ligne / total_zone) ≥ 80 %  → défaillance quasi-totale
++40  si (lampadaires_hors_ligne / total_zone) ≥ 40 %  → défaillance majeure
++20  si (lampadaires_hors_ligne / total_zone) > 0 %   → pannes ponctuelles
++min(30, alertes_critiques × 10)                      → cap à 30
++10  si bons de travail ouverts dans la zone
+Score = min(100, score)
+```
+Note : les 3 paliers hors ligne (80 %, 40 %, >0 %) sont exclusifs — seul le palier le plus haut atteint s'applique.
+
+**Mapping score → priorité (identique LCU et zone) :**
+
+| Score | Priorité | Action |
+|---|---|---|
+| ≥ 75 | **CRITICAL** | Intervention immédiate |
+| 50–74 | **HIGH** | Dans les 24h |
+| 25–49 | **MEDIUM** | Prochaine tournée |
+| < 25 | **LOW** | Surveillance normale |
+
+**Règle fondamentale :** Score LCU CRITICAL → intervenir sur la LCU **avant** les lampadaires individuels.
+
+---
+
 ## Objectif métier
 
 Une LCU (passerelle radio) supervise en général entre 5 et 30 lampadaires. Une zone géographique regroupe plusieurs dizaines à plusieurs centaines de lampadaires. Ces deux niveaux d'agrégation permettent de détecter des problèmes **groupés** qui ne seraient pas visibles en analysant les lampadaires individuellement.

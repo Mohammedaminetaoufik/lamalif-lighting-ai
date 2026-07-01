@@ -11,6 +11,34 @@ audience: admin,technicien,ingenieur
 
 # Simulateur de télémétrie
 
+## Résumé — Comment fonctionne le simulateur de télémétrie
+
+Le simulateur génère des mesures électriques artificielles cohérentes pour 7 scénarios types. Les données sont **simulées** (pas de capteurs réels). Les formules sont correctes et représentatives, mais les valeurs ne correspondent pas à un réseau physique.
+
+**Formules communes à tous les scénarios :**
+```
+Courant (A) = Puissance (W) / Tension (V)
+Énergie (kWh) = Puissance (W) × 5 / 60 / 1000   [intervalle 5 min]
+Tension simulée = 225 + rand(0, 10)  → 225–235 V
+Humidité simulée = 45 + rand(0, 20) → 45–65 %
+```
+
+**Les 7 scénarios et leur effet sur les calculs :**
+
+| Scénario | Puissance | Alerte déclenchée | Règle dimming appliquée |
+|---|---|---|---|
+| Nuit normale | 30 % nominal | Aucune | Règle 4 → 30 % |
+| Piéton détecté | 90 % nominal | Aucune | Règle 3 → 90 % |
+| Véhicule détecté | 100 % nominal | Aucune | Règle 3 → 90 % |
+| **Surchauffe** | 60 % nominal | **CRITICAL temp (78 °C > 75 °C)** | Règle 2 → ≤ 50 % |
+| Panne driver | 0 W | Possible (éteint) | Règle 7 → 60 % |
+| Brûlage diurne | 80 % nominal | Aucune | Règle 6 → 20 % (luminosité > 70 lux) |
+| **Surconsommation** | 160 % nominal | **WARNING (> 130 %) + CRITICAL (> 150 %)** | Règle 7 → 60 % |
+
+**Seuils clés :** 75 °C (alerte CRITICAL), 130 % et 150 % nominal (alertes consommation), 70 lux (règle jour).
+
+---
+
 ## Objectif métier
 
 Le simulateur de télémétrie génère des mesures électriques cohérentes pour alimenter la plateforme en l'absence de matériel réel connecté. Il permet de tester l'ensemble des workflows (alertes, dimming, rapports énergétiques, bons de travail) avant d'avoir accès à un réseau de lampadaires physiques.

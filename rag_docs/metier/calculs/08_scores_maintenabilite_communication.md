@@ -11,6 +11,52 @@ audience: admin,technicien,ingenieur
 
 # Scores de maintenabilité et de santé communication
 
+## Résumé — Comment sont calculés les scores de maintenabilité et de communication
+
+Deux scores complémentaires calculés par `scoring.py`. Les deux partent de 100 et appliquent des pénalités. Plancher à 0.
+
+**Score de maintenabilité (données complètes du lampadaire) :**
+```
+Score = 100
+−20  si pas de LCU associée
+−20  si bon de travail ouvert > 48h
+−15  si pas de coordonnées GPS
+−15  si dernière télémétrie > 6h
+−10  si pas de zone assignée
+−10  si non mis en service (commissioning_status ≠ "commissioned")
+Score = max(0, score)
+```
+
+| Score | Interprétation |
+|---|---|
+| 85–100 | Bien documenté, maintenance facile |
+| 60–84 | Quelques données manquantes |
+| 40–59 | Données partielles, maintenance difficile |
+| < 40 | Mal documenté, intervention compliquée |
+
+**Score de santé communication (qualité du lien LCU) :**
+```
+Score = 100
+−40  si LCU associée hors ligne
+−30  si non vu depuis > 24h
+−25  si signal < 30 dBm
+−20  si LCU état inconnu
+−15  si non vu depuis 6–24h
+−10  si signal 30–59 dBm
+Score = max(0, score)
+```
+
+| Score | Interprétation |
+|---|---|
+| 80–100 | Communication excellente |
+| 50–79 | Acceptable, surveillance recommandée |
+| 20–49 | Dégradée, investigation requise |
+| < 20 | Sévèrement compromise |
+
+**Seuils signal radio :** < 30 dBm = très faible (−25) ; 30–59 dBm = modéré (−10) ; ≥ 60 dBm = excellent (0).
+
+---
+
 ## Objectif métier
 
 Ces deux scores évaluent des dimensions complémentaires de la qualité opérationnelle d'un lampadaire :
